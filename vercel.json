@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "predict.py", "use": "@vercel/python" },
+    { "src": "static/**", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "^/scan$", "dest": "/predict.py" },
+    { "src": "^/view_inbox$", "dest": "/predict.py" },
+    { "src": "^/view_spam$", "dest": "/predict.py" },
+    { "src": "^/delete_spam$", "dest": "/predict.py" },
+    { "src": "^/(.*)$", "dest": "/static/$1" }
+  ]
+}
