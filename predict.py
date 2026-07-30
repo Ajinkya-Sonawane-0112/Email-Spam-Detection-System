@@ -1,17 +1,13 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-import pandas as pd
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
 import re
 import imaplib
 import email
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 import logging
+import csv
+from typing import List
 
 app = FastAPI()
 
@@ -19,18 +15,16 @@ app = FastAPI()
 logging.basicConfig(filename='spam_classifier.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Load dataset and train model at cold start. If mail_data.csv is missing, the endpoints will fail gracefully.
-try:
-    data = pd.read_csv("mail_data.csv")
-    if list(data.columns)[:2] != ['Label', 'Email']:
-        # Try to handle common variants
-        data.columns = [data.columns[0], data.columns[1]]
-    data = data.rename(columns={data.columns[0]: 'Label', data.columns[1]: 'Email'})
-    data.dropna(subset=["Email", "Label"], inplace=True)
-    data['Label'] = data['Label'].map({'spam': 1, 'ham': 0}).fillna(0).astype(int)
-except Exception as e:
-    logging.error(f"Dataset loading failed: {e}")
-    data = None
+# Simple rule-based spam keyword list (lightweight alternative to sklearn model for serverless)
+SPAM_KEYWORDS = [
+    'free', 'win', 'winner', 'prize', 'click', 'buy', 'urgent', 'credit', 'offer',
+    'cheap', 'cash', 'loan', 'subscribe', 'winner', 'claim', 'congratulations', 'guarantee'
+]
+
+# In-memory storage for scanned emails while the server instance is warm.
+spam_emails: List[dict] = []
+inbox_emails: List[dict] = []
+model_accuracy: float = 0.0
 
 
 def preprocess_text(text: str) -> str:
@@ -40,32 +34,87 @@ def preprocess_text(text: str) -> str:
     text = re.sub(r"[^\w\s]", '', text)
     return text
 
-vectorizer = None
-model = None
-model_accuracy = 0.0
 
-if data is not None:
-    try:
-        data['Email'] = data['Email'].apply(preprocess_text)
-        X_train, X_test, y_train, y_test = train_test_split(
-            data['Email'], data['Label'], test_size=0.3, stratify=data['Label'], random_state=42
-        )
-        vectorizer = TfidfVectorizer(max_features=5000, stop_words='english')
-        X_train_vectorized = vectorizer.fit_transform(X_train)
-        X_test_vectorized = vectorizer.transform(X_test)
-        model = MultinomialNB(alpha=0.1)
-        model.fit(X_train_vectorized, y_train)
-        y_pred = model.predict(X_test_vectorized)
-        model_accuracy = float(accuracy_score(y_test, y_pred))
-        logging.info(f"Model trained. Accuracy: {model_accuracy:.4f}")
-    except Exception as e:
-        logging.error(f"Model training failed: {e}")
-        vectorizer = None
-        model = None
+def rule_based_predict(text: str) -> (int, float):
+    """Return (prediction, confidence)
+    prediction: 1 for spam, 0 for ham
+    confidence: 0-100
+    """
+    txt = preprocess_text(text)
+    count = 0
+    for kw in SPAM_KEYWORDS:
+        if kw in txt:
+            count += txt.count(kw)
+    # More signals (simple heuristics)
+    if any(p in txt for p in ['http://', 'https://']):
+        count += 1
+    if any(char.isdigit() for char in txt) and len(re.findall(r"\d{5,}", txt)):
+        count += 1
 
-# In-memory storage for scanned emails while the server instance is warm.
-spam_emails = []
-inbox_emails = []
+    if count == 0:
+        return 0, 25.0
+    # confidence scaled
+    confidence = min(95.0, 30.0 + count * 15.0)
+    return 1, confidence
+
+
+# Try to compute a rough accuracy against mail_data.csv using the same heuristic.
+try:
+    total = 0
+    correct = 0
+    with open('mail_data.csv', newline='', encoding='utf-8', errors='ignore') as csvfile:
+        reader = csv.reader(csvfile)
+        header = next(reader, None)
+        # Find label/text columns
+        # Common formats: Label,Email or label,text etc.
+        if header and len(header) >= 2 and ('label' in header[0].lower() or 'label' in header[1].lower()):
+            # header exists, determine indices
+            label_idx = 0
+            text_idx = 1
+            # try to find exact
+            for i, h in enumerate(header):
+                if 'label' in h.lower():
+                    label_idx = i
+                if 'email' in h.lower() or 'text' in h.lower() or 'body' in h.lower():
+                    text_idx = i
+        else:
+            # assume first two columns are label and email
+            label_idx = 0
+            text_idx = 1
+            # if header looks like data, treat it as row
+            if header is not None and len(header) >= 2 and header[0].lower() in ('spam', 'ham'):
+                # first row is data
+                try:
+                    lbl = header[0]
+                    txt = header[1]
+                    pred, _ = rule_based_predict(txt)
+                    actual = 1 if lbl.strip().lower() == 'spam' else 0
+                    total += 1
+                    correct += 1 if pred == actual else 0
+                except Exception:
+                    pass
+
+        for row in reader:
+            if len(row) <= max(label_idx, text_idx):
+                continue
+            label = row[label_idx].strip().lower()
+            text = row[text_idx]
+            pred, _ = rule_based_predict(text)
+            actual = 1 if label == 'spam' else 0
+            total += 1
+            if pred == actual:
+                correct += 1
+    if total > 0:
+        model_accuracy = (correct / total)
+    else:
+        model_accuracy = 0.0
+    logging.info(f"Rule-based model accuracy on provided dataset: {model_accuracy:.4f} (computed at cold-start)")
+except FileNotFoundError:
+    logging.warning('mail_data.csv not found; model_accuracy set to 0')
+    model_accuracy = 0.0
+except Exception as e:
+    logging.error(f"Failed to compute dataset accuracy: {e}")
+    model_accuracy = 0.0
 
 
 def get_email_date(raw_date):
@@ -96,7 +145,7 @@ async def scan(request: Request):
     """Scan the IMAP inbox credentials provided in form-data and return classified emails.
     Accepts form-encoded fields: email, password, imap
     """
-    global spam_emails, inbox_emails, vectorizer, model, model_accuracy
+    global spam_emails, inbox_emails, model_accuracy
     form = await request.form()
     email_addr = form.get('email')
     password = form.get('password')
@@ -107,9 +156,6 @@ async def scan(request: Request):
 
     if not all([email_addr, password, imap_server]):
         return JSONResponse({ 'status': 'error', 'message': 'Missing email, password, or imap server' })
-
-    if vectorizer is None or model is None:
-        return JSONResponse({ 'status': 'error', 'message': 'Model not available on server' })
 
     try:
         mail = imaplib.IMAP4_SSL(imap_server)
@@ -146,16 +192,14 @@ async def scan(request: Request):
                             body = str(msg.get_payload())
 
                     text_to_analyze = f"{subject} {sender} {body[:200]}"
-                    email_vectorized = vectorizer.transform([preprocess_text(text_to_analyze)])
-                    prediction = int(model.predict(email_vectorized)[0])
-                    confidence = float(model.predict_proba(email_vectorized)[0].max() * 100) if hasattr(model, 'predict_proba') else None
+                    prediction, confidence = rule_based_predict(text_to_analyze)
 
                     email_info = {
                         'id': email_id.decode() if isinstance(email_id, bytes) else str(email_id),
                         'subject': subject,
                         'sender': sender,
                         'body_preview': body[:100],
-                        'confidence': float(confidence) if confidence is not None else None,
+                        'confidence': float(confidence),
                         'timestamp': sent_time,
                         'is_spam': bool(prediction)
                     }

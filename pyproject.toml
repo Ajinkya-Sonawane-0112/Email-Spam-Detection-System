@@ -2,7 +2,10 @@
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "email-spam-classifier"
+version = "0.1.0"
+
 [tool.uv]
-# Extra build deps may be used by the Vercel 'uv' builder when building wheels from source.
-# This helps avoid ModuleNotFoundError: No module named 'pkg_resources' during pandas build.
-extra-build-dependencies = { "pandas" = ["pkg_resources"] }
+# Keep this minimal; we're using a lightweight, pure-Python runtime for Vercel builds.
+extra-build-dependencies = {}
