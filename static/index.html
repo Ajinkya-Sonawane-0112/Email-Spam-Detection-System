@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Email Spam Classifier</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #e0f7fa, #b2ebf2);
+            font-family: 'Arial', sans-serif;
+            min-height: 100vh;
+            background-attachment: fixed;
+        }
+        .main-header {
+            background: #ffffff;
+            padding: 20px 0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            margin-bottom: 30px;
+            border-bottom-left-radius: 20px;
+            border-bottom-right-radius: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        .main-header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #0277bd;
+            animation: fadeIn 1s ease-in;
+            position: relative;
+            z-index: 1;
+        }
+        .main-header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(2,119,189,0.1), transparent);
+            animation: pulse 10s infinite;
+        }
+        .credentials-card, .stats-card, .email-card {
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+            border-radius: 15px;
+            background: #fff;
+            animation: slideUp 0.5s ease-out;
+            transition: all 0.3s ease;
+        }
+        .credentials-card:hover, .stats-card:hover, .email-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+        }
+        .stats-card {
+            padding: 20px;
+            margin-bottom: 20px;
+            background: linear-gradient(145deg, #f5f7fa, #e4e7eb);
+        }
+        .stats-card h2 {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+        .btn-custom {
+            border-radius: 25px;
+            padding: 12px 25px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .btn-custom::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        .btn-custom:hover::after {
+            width: 200%;
+            height: 200%;
+        }
+        .btn-custom:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        .btn-primary { background-color: #0277bd; border-color: #0277bd; }
+        .btn-success { background-color: #2e7d32; border-color: #2e7d32; }
+        .btn-warning { background-color: #f9a825; border-color: #f9a825; }
+        .btn-danger { background-color: #c62828; border-color: #c62828; }
+        .email-display {
+            min-height: 250px;
+            background: #fafafa;
+            border-radius: 10px;
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .footer-text {
+            color: #444;
+            font-size: 1rem;
+            text-align: center;
+            margin-top: 40px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        .spinner {
+            display: none;
+            width: 50px;
+            height: 50px;
+            border: 5px solid #0277bd;
+            border-top: 5px solid transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        .chart-container {
+            position: relative;
+            margin: 20px auto;
+            width: 100%;
+            max-width: 400px;
+            height: 300px;
+        }
+        /* Icon Styling */
+        .status-icon {
+            margin-right: 5px;
+            font-size: 1.1rem;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
+        @media (max-width: 576px) {
+            .btn-custom { margin-bottom: 15px; }
+            .main-header h1 { font-size: 1.8rem; }
+            .stats-card { padding: 15px; }
+            .chart-container { max-width: 300px; height: 200px; }
+        }
+    </style>
+</head>
+<body>
+    <header class="main-header text-center">
+        <div class="container">
+            <h1><i class="fas fa-envelope mr-2"></i>Email Spam Classifier</h1>
+        </div>
+    </header>
+
+    <div class="container mb-5">
+        <div class="card credentials-card mb-4">
+            <div class="card-body">
+                <h5 class="card-title text-center mb-4">Email Credentials</h5>
+                <form id="credentialsForm">
+                    <div class="form-row">
+                        <div class="form-group col-md-4">
+                            <label for="email">Email</label>
+                            <input type="email" class="form-control" id="email" placeholder="Enter email" />
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="password">Password</label>
+                            <input type="password" class="form-control" id="password" placeholder="Enter password" />
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="imap">IMAP Server</label>
+                            <input type="text" class="form-control" id="imap" value="imap.gmail.com" />
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="row mb-4 justify-content-center">
+            <div class="col-md-3">
+                <button class="btn btn-primary btn-custom btn-block" onclick="scanInbox()">
+                    <i class="fas fa-search"></i> Check Inbox for Spam
+                </button>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-success btn-custom btn-block" onclick="viewInbox()">
+                    <i class="fas fa-inbox"></i> View Inbox Emails
+                </button>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-warning btn-custom btn-block" onclick="viewSpam()">
+                    <i class="fas fa-exclamation-circle"></i> View Spam Emails
+                </button>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-danger btn-custom btn-block" onclick="deleteSpam()">
+                    <i class="fas fa-trash-alt"></i> Delete All Spam
+                </button>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-4">
+                <div class="stats-card">
+                    <h2 id="totalEmails">0</h2>
+                    <p>Total Emails</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stats-card">
+                    <h2 id="spamEmails" style="color:#c62828;">0</h2>
+                    <p>Spam Detected</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stats-card">
+                    <h2 id="hamEmails" style="color:#2e7d32;">0</h2>
+                    <p>Ham (Safe)</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="spamChart"></canvas>
+        </div>
+
+        <div class="card email-card mt-4">
+            <div class="card-body email-display" id="emailDisplay">
+                <p class="text-center text-muted">No data to display</p>
+            </div>
+        </div>
+
+        <div class="spinner" id="loadingSpinner"></div>
+    </div>
+
+    <div class="footer-text" id="statusBar">
+        Model Accuracy: 0% | Ready
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        let inboxEmails = [];
+        let spamEmails = [];
+        let modelAccuracy = 0;
+        let spamChart;
+
+        function updateStatusBar(message = 'Ready') {
+            document.getElementById('statusBar').innerText = 
+                `Model Accuracy: ${(modelAccuracy * 100).toFixed(2)}% | ${message}`;
+        }
+
+        function updateStats(total, spam, ham) {
+            document.getElementById('totalEmails').innerText = total;
+            document.getElementById('spamEmails').innerText = spam;
+            document.getElementById('hamEmails').innerText = ham;
+            updateChart(total, spam, ham);
+        }
+
+        function updateChart(total, spam, ham) {
+            if (spamChart) spamChart.destroy();
+            const totalEmails = total || 1;
+            const spamPercentage = ((spam / totalEmails) * 100).toFixed(1);
+            const hamPercentage = ((ham / totalEmails) * 100).toFixed(1);
+
+            const ctx = document.getElementById('spamChart').getContext('2d');
+            spamChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: [`Spam (${spamPercentage}%)`, `Ham (${hamPercentage}%)`],
+                    datasets: [{
+                        data: [spam, ham],
+                        backgroundColor: ['#c62828', '#2e7d32'],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: { display: true, text: 'Spam vs Ham Distribution' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw || 0;
+                                    const percentage = ((value / totalEmails) * 100).toFixed(1);
+                                    return `${label}: ${value} emails (${percentage}%)`;
+                                }
+                            }
+                        }
+                    },
+                    animation: { animateScale: true, animateRotate: true }
+                }
+            });
+        }
+
+        function displayEmails(emails, type = 'inbox') {
+            const display = document.getElementById('emailDisplay');
+            display.innerHTML = '';
+            if (!emails.length) {
+                display.innerHTML = `<p class="text-center text-muted">No ${type} emails to display</p>`;
+                return;
+            }
+            emails.forEach(email => {
+                const status = email.is_spam ? 'SPAM' : 'SAFE';
+                const color = email.is_spam ? '#c62828' : '#2e7d32';
+                const icon = email.is_spam 
+                    ? '<i class="fas fa-exclamation-triangle status-icon" style="color:#c62828;"></i>' 
+                    : '<i class="fas fa-check-circle status-icon" style="color:#2e7d32;"></i>';
+                display.innerHTML += `
+                    <div class="mb-3 p-2 border-bottom" style="animation: fadeIn 0.5s;">
+                        <p><strong>[${email.timestamp}] ${email.sender}</strong></p>
+                        <p>Subject: ${email.subject}</p>
+                        <p>Status: ${icon} <span style="color:${color}">${status}</span> (Confidence: ${email.confidence.toFixed(2)}%)</p>
+                    </div>
+                `;
+            });
+        }
+
+        function getFormData() {
+            return {
+                email: document.getElementById('email').value,
+                password: document.getElementById('password').value,
+                imap: document.getElementById('imap').value
+            };
+        }
+
+        function scanInbox() {
+            const formData = getFormData();
+            const spinner = document.getElementById('loadingSpinner');
+            spinner.style.display = 'block';
+            document.getElementById('emailDisplay').innerHTML = '<p class="text-center">Scanning inbox...</p>';
+            updateStatusBar('Scanning...');
+
+            fetch('/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams(formData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                spinner.style.display = 'none';
+                if (data.status === 'success') {
+                    inboxEmails = data.inbox;
+                    spamEmails = data.spam;
+                    modelAccuracy = data.accuracy;
+                    updateStats(data.stats.total, data.stats.spam, data.stats.ham);
+                    displayEmails(inboxEmails);
+                    updateStatusBar(data.message);
+                } else {
+                    document.getElementById('emailDisplay').innerHTML = `<p class="text-center text-danger">${data.message}</p>`;
+                    updateStatusBar('Error');
+                }
+            })
+            .catch(error => {
+                spinner.style.display = 'none';
+                document.getElementById('emailDisplay').innerHTML = `<p class="text-center text-danger">Error: ${error}</p>`;
+                updateStatusBar('Error');
+            });
+        }
+
+        function viewInbox() {
+            fetch('/view_inbox')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    inboxEmails = data.inbox;
+                    displayEmails(inboxEmails, 'inbox');
+                    updateStatusBar('Viewing Inbox');
+                }
+            });
+        }
+
+        function viewSpam() {
+            fetch('/view_spam')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    spamEmails = data.spam;
+                    displayEmails(spamEmails, 'spam');
+                    updateStatusBar('Viewing Spam');
+                }
+            });
+        }
+
+        function deleteSpam() {
+            if (!spamEmails.length) {
+                alert('No spam emails to delete!');
+                return;
+            }
+            if (!confirm('Are you sure you want to delete all spam emails?')) return;
+
+            const formData = getFormData();
+            fetch('/delete_spam', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams(formData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    inboxEmails = data.inbox;
+                    spamEmails = [];
+                    updateStats(data.stats.total, data.stats.spam, data.stats.ham);
+                    displayEmails(inboxEmails);
+                    updateStatusBar(data.message);
+                    alert(data.message);
+                } else {
+                    alert(`Error: ${data.message}`);
+                    updateStatusBar('Error');
+                }
+            })
+            .catch(error => alert(`Error: ${error}`));
+        }
+
+        updateStatusBar();
+    </script>
+</body>
+</html>
