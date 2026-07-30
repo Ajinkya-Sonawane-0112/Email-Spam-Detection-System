@@ -1,4 +1,5 @@
 # 📧 Email Spam Classifier
+### Live : https://email-spam-detection-system-g5un.vercel.app/
 
 An AI-powered Email Spam Classifier that uses machine learning to detect spam vs. ham (non-spam) emails. This project provides a simple web interface to test the model locally and demonstrates how common Python data-science libraries can be used to build a lightweight classifier.
 
