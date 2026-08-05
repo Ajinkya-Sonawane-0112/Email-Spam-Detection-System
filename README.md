@@ -112,8 +112,8 @@ Please document any model-training scripts or data sources you add so others can
 If this repository does not include a LICENSE file, add one to clarify usage rights. A common choice is the MIT license.
 
 ## Author / Contact
-**Dnyanesh Sonawane**
+**Ajinkya Sonawane**
 
-Third Year Computer Engineering Student
+Fourth Year Computer Engineering Student
 
 (Include email or link to GitHub profile if you want people to contact you.)
